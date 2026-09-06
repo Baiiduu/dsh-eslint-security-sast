@@ -1,0 +1,6 @@
+- insert:
+    - id: eslint-security-sast
+      name: '@aaub-software/dsh-eslint-security-sast'
+      config:
+        timeoutMs: 300000
+        maxFindings: 200
