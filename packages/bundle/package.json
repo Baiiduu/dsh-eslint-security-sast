@@ -3,6 +3,23 @@
   "version": "0.1.0",
   "description": "ESLint Security SAST bundle and model-facing scan tool for DeepSeek Harness.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Baiiduu/dsh-eslint-security-sast.git",
+    "directory": "packages/bundle"
+  },
+  "homepage": "https://github.com/Baiiduu/dsh-eslint-security-sast#readme",
+  "bugs": {
+    "url": "https://github.com/Baiiduu/dsh-eslint-security-sast/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "eslint",
+    "sast",
+    "security",
+    "typescript"
+  ],
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
