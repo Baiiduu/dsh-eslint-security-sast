@@ -1,2 +1,4 @@
 packages:
   - packages/bundle
+minimumReleaseAgeExclude:
+  - '@aaub-software/dsh-sast-contract@0.1.0'

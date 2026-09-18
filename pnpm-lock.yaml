@@ -10,6 +10,9 @@ importers:
 
   packages/bundle:
     dependencies:
+      '@aaub-software/dsh-sast-contract':
+        specifier: 0.1.0
+        version: 0.1.0
       '@deepseek-ai/schemastery':
         specifier: ^3.18.2
         version: 3.18.2
@@ -52,6 +55,10 @@ importers:
         version: 24.13.3
 
 packages:
+
+  '@aaub-software/dsh-sast-contract@0.1.0':
+    resolution: {integrity: sha512-c6NJJ5k+s21YB6oVabY731osqpu41lxim6g1IurEZ/aWPgJDtOpoX/5PmLkc3ret5el3go7j1S38SQh20tITgQ==}
+    engines: {node: '>=24.0.0'}
 
   '@cacheable/memory@2.2.0':
     resolution: {integrity: sha512-CTLKqLItRCEixEAewD3/j9DB3/o96gpTPD4eJ1v+DGOlxZRZncRQkGYqqnAGCscYd6RNeXfGeiuCphsPtqyIfQ==}
@@ -610,6 +617,8 @@ packages:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
 snapshots:
+
+  '@aaub-software/dsh-sast-contract@0.1.0': {}
 
   '@cacheable/memory@2.2.0':
     dependencies:

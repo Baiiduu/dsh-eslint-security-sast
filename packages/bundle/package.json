@@ -1,6 +1,6 @@
 {
   "name": "@aaub-software/dsh-eslint-security-sast",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "ESLint Security SAST bundle and model-facing scan tool for DeepSeek Harness.",
   "license": "MIT",
   "repository": {
@@ -53,6 +53,7 @@
     "node": ">=24.0.0"
   },
   "dependencies": {
+    "@aaub-software/dsh-sast-contract": "0.1.0",
     "@deepseek-ai/schemastery": "^3.18.2",
     "@typescript-eslint/parser": "8.69.0",
     "eslint": "10.10.0",

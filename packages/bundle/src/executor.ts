@@ -37,6 +37,31 @@ function requireString(value: unknown, field: string): string {
   return value
 }
 
+function optionalBoundedString(
+  value: unknown,
+  field: string,
+  maxLength: number,
+): string | undefined {
+  if (value === undefined) return undefined
+  const text = requireString(value, field)
+  if (text.length > maxLength) {
+    throw new Error(`runner output ${field} must not exceed ${maxLength} characters`)
+  }
+  return text
+}
+
+function optionalHttpUrl(value: unknown, field: string): string | undefined {
+  const text = optionalBoundedString(value, field, 2_048)
+  if (text === undefined) return undefined
+  try {
+    const url = new URL(text)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error('unsupported protocol')
+  } catch {
+    throw new Error(`runner output ${field} must be an HTTP(S) URL`)
+  }
+  return text
+}
+
 function requireInteger(value: unknown, field: string, minimum: number): number {
   if (!Number.isInteger(value) || (value as number) < minimum) {
     throw new Error(`runner output ${field} must be an integer greater than or equal to ${minimum}`)
@@ -51,6 +76,9 @@ function parseFinding(value: unknown, index: number): EslintSecurityFinding {
   if (severity !== 'warning' && severity !== 'error') {
     throw new Error(`runner output ${field}.severity is invalid`)
   }
+  const nodeType = optionalBoundedString(value.nodeType, `${field}.nodeType`, 200)
+  const ruleUrl = optionalHttpUrl(value.ruleUrl, `${field}.ruleUrl`)
+  const source = optionalBoundedString(value.source, `${field}.source`, 2_048)
 
   return {
     ruleId: requireString(value.ruleId, `${field}.ruleId`),
@@ -61,6 +89,9 @@ function parseFinding(value: unknown, index: number): EslintSecurityFinding {
     startColumn: requireInteger(value.startColumn, `${field}.startColumn`, 1),
     endLine: requireInteger(value.endLine, `${field}.endLine`, 1),
     endColumn: requireInteger(value.endColumn, `${field}.endColumn`, 1),
+    ...(nodeType === undefined ? {} : { nodeType }),
+    ...(ruleUrl === undefined ? {} : { ruleUrl }),
+    ...(source === undefined ? {} : { source }),
   }
 }
 

@@ -14,11 +14,15 @@ import { createEslintSecurityScanTool } from './tool.js'
 export { Config } from './config.js'
 export type { ResolvedConfig } from './config.js'
 export type {
+  EslintEvidence,
+  EslintSastScanResult,
+  EslintSastScanResult as EslintSecurityScanResult,
+  EslintSourceEvidence,
+} from './agent-result.js'
+export type {
   EslintSecurityDiagnostic,
-  EslintSecurityEngine,
   EslintSecurityFinding,
   EslintSecurityScanInput,
-  EslintSecurityScanResult,
 } from './types.js'
 
 /** Cordis plugin name used in diagnostics. */

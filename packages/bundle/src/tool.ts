@@ -3,19 +3,10 @@ import { isAbsolute, relative, resolve, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { createEslintSastResult } from './agent-result.js'
 import type { ResolvedConfig } from './config.js'
 import { runEslintSecurity } from './executor.js'
-import type {
-  EslintSecurityDiagnostic,
-  EslintSecurityFinding,
-  EslintSecurityScanInput,
-  EslintSecurityScanResult,
-} from './types.js'
-
-const SEVERITY_ORDER: Readonly<Record<EslintSecurityFinding['severity'], number>> = {
-  error: 0,
-  warning: 1,
-}
+import type { EslintSecurityScanInput } from './types.js'
 
 function isInside(root: string, candidate: string): boolean {
   const relativePath = relative(root, candidate)
@@ -52,53 +43,14 @@ async function resolveTargets(workspaceRoot: string, paths: readonly string[]): 
   return [...new Set(resolved)]
 }
 
-function compareFindings(left: EslintSecurityFinding, right: EslintSecurityFinding): number {
-  return SEVERITY_ORDER[left.severity] - SEVERITY_ORDER[right.severity]
-    || left.path.localeCompare(right.path)
-    || left.startLine - right.startLine
-    || left.startColumn - right.startColumn
-    || left.ruleId.localeCompare(right.ruleId)
+function renderResult(result: unknown): string {
+  return JSON.stringify(result)
 }
 
-function renderDiagnostic(diagnostic: EslintSecurityDiagnostic): string {
-  const location = diagnostic.line === undefined
-    ? diagnostic.path
-    : `${diagnostic.path}:${diagnostic.line}:${diagnostic.column ?? 1}`
-  return `- [${diagnostic.type}] ${location}: ${diagnostic.message}`
-}
-
-function renderResult(result: EslintSecurityScanResult): string {
-  const lines = [
-    `ESLint Security scan ${result.status}.`,
-    `Engine: ESLint ${result.engine.eslintVersion}; eslint-plugin-security ${result.engine.securityPluginVersion}.`,
-    `Scanned targets: ${result.scannedPaths.length}; analyzed files: ${result.scannedFiles}.`,
-    `Security hotspots: ${result.totalFindings}; returned: ${result.returnedFindings}; truncated: ${String(result.truncated)}.`,
-    `Duration: ${result.durationMs}ms.`,
-    'Treat rule matches as review candidates, not confirmed vulnerabilities. Read the surrounding source and trace relevant data flow before drawing a conclusion.',
-  ]
-
-  if (result.findings.length > 0) {
-    lines.push('', 'Security hotspots:')
-    for (const finding of result.findings) {
-      lines.push(
-        `- [${finding.severity}] ${finding.ruleId} at ${finding.path}:${finding.startLine}:${finding.startColumn}`
-        + `-${finding.endLine}:${finding.endColumn}: ${finding.message}`,
-      )
-    }
-  }
-  if (result.diagnostics.length > 0) {
-    lines.push('', 'Diagnostics:', ...result.diagnostics.map(renderDiagnostic))
-  }
-  return lines.join('\n')
-}
-
-const findingSchema = {
+const locationSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    ruleId: { type: 'string', required: true },
-    severity: { type: 'string', enum: ['warning', 'error'], required: true },
-    message: { type: 'string', required: true },
     path: { type: 'string', required: true },
     startLine: { type: 'integer', required: true },
     startColumn: { type: 'integer', required: true },
@@ -107,15 +59,53 @@ const findingSchema = {
   },
 } as const
 
+const ruleSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    name: { type: 'string' },
+    severity: { type: 'string', enum: ['info', 'warning', 'error'], required: true },
+    cwe: { type: 'array', items: { type: 'string' } },
+    owasp: { type: 'array', items: { type: 'string' } },
+    references: { type: 'array', items: { type: 'string' } },
+  },
+} as const
+
+const evidenceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    type: { type: 'string', required: true },
+    description: { type: 'string' },
+    locations: { type: 'array', items: locationSchema },
+    data: { type: 'object', additionalProperties: true },
+  },
+} as const
+
+const findingSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    scanner: { type: 'string', required: true },
+    rule: { ...ruleSchema, required: true },
+    message: { type: 'string', required: true },
+    location: { ...locationSchema, required: true },
+    fingerprint: { type: 'string' },
+    evidence: { type: 'array', items: evidenceSchema, required: true },
+  },
+} as const
+
 const diagnosticSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
-    type: { type: 'string', enum: ['parse-error', 'lint-error'], required: true },
+    level: { type: 'string', enum: ['error', 'warning', 'info'], required: true },
+    type: { type: 'string', required: true },
     message: { type: 'string', required: true },
-    path: { type: 'string', required: true },
-    line: { type: 'integer' },
-    column: { type: 'integer' },
+    code: { oneOf: [{ type: 'integer' }, { type: 'string' }] },
+    location: locationSchema,
   },
 } as const
 
@@ -125,7 +115,8 @@ export function createEslintSecurityScanTool(ctx: Context, config: ResolvedConfi
     name: 'eslint_security_scan',
     description: 'Run a read-only ESLint Security hotspot scan over workspace-relative JavaScript and TypeScript files or directories. '
       + 'Uses a fixed scanner-owned configuration and never loads the target repository ESLint config, inline disables, or suppressions. '
-      + 'Results are rule-based review candidates; inspect source context and relevant data flow before classifying a vulnerability.',
+      + 'Results are rule-based review candidates; inspect source context and relevant data flow before classifying a vulnerability. '
+      + 'Returns the versioned ssc-sast/v1 normalized result contract.',
     parameters: {
       paths: {
         type: 'array',
@@ -138,25 +129,34 @@ export function createEslintSecurityScanTool(ctx: Context, config: ResolvedConfi
         type: 'object',
         additionalProperties: false,
         properties: {
+          schemaVersion: { type: 'string', const: 'ssc-sast/v1', required: true },
           status: { type: 'string', enum: ['completed', 'partial'], required: true },
-          engine: {
+          scanner: {
             type: 'object',
             additionalProperties: false,
             required: true,
             properties: {
-              name: { type: 'string', const: 'eslint-security', required: true },
-              eslintVersion: { type: 'string', required: true },
-              securityPluginVersion: { type: 'string', required: true },
+              name: { type: 'string', required: true },
+              version: { type: 'string', required: true },
+              components: { type: 'object', additionalProperties: true },
+              configuration: { type: 'string' },
             },
           },
           scannedPaths: { type: 'array', items: { type: 'string' }, required: true },
-          scannedFiles: { type: 'integer', required: true },
           findings: { type: 'array', items: findingSchema, required: true },
           diagnostics: { type: 'array', items: diagnosticSchema, required: true },
-          totalFindings: { type: 'integer', required: true },
-          returnedFindings: { type: 'integer', required: true },
-          truncated: { type: 'boolean', required: true },
-          durationMs: { type: 'integer', required: true },
+          summary: {
+            type: 'object',
+            additionalProperties: false,
+            required: true,
+            properties: {
+              scannedFiles: { type: 'integer' },
+              totalFindings: { type: 'integer', required: true },
+              returnedFindings: { type: 'integer', required: true },
+              truncated: { type: 'boolean', required: true },
+              durationMs: { type: 'number', required: true },
+            },
+          },
         },
       },
       render: (_args, result) => [{ type: 'text', text: renderResult(result) }],
@@ -182,24 +182,7 @@ export function createEslintSecurityScanTool(ctx: Context, config: ResolvedConfi
         sandboxPolicy,
         signal: exec.signal,
       })
-      const findings = [...scan.findings].sort(compareFindings)
-      const result: EslintSecurityScanResult = {
-        status: scan.diagnostics.length > 0 ? 'partial' : 'completed',
-        engine: {
-          name: 'eslint-security',
-          eslintVersion: scan.eslintVersion,
-          securityPluginVersion: scan.securityPluginVersion,
-        },
-        scannedPaths: targets,
-        scannedFiles: scan.scannedFiles,
-        findings,
-        diagnostics: scan.diagnostics,
-        totalFindings: scan.totalFindings,
-        returnedFindings: findings.length,
-        truncated: scan.truncated,
-        durationMs: scan.durationMs,
-      }
-      return result
+      return createEslintSastResult(scan, targets)
     },
   })
 }

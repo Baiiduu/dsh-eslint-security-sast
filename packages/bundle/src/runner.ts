@@ -26,6 +26,11 @@ interface RunnerResult {
 interface SecurityPluginMetadata {
   meta?: { version?: string }
   configs?: { recommended?: { rules?: unknown } }
+  rules?: Record<string, {
+    meta?: {
+      docs?: { url?: string }
+    }
+  }>
 }
 
 type FlatPlugin = NonNullable<Linter.Config['plugins']>[string]
@@ -42,6 +47,55 @@ if (configuredRules === undefined || typeof configuredRules !== 'object' || conf
 // ESLint 10 owns a different nominal type graph, so narrow it once here.
 const flatSecurityPlugin = securityPlugin as unknown as FlatPlugin
 const recommendedRules = configuredRules as Linter.RulesRecord
+const SOURCE_SNIPPET_MAX_LINES = 12
+const SOURCE_SNIPPET_MAX_CHARS = 2_000
+
+function ruleDocumentationUrl(ruleId: string): string | undefined {
+  const prefix = 'security/'
+  if (!ruleId.startsWith(prefix)) return undefined
+  const value = pluginMetadata.rules?.[ruleId.slice(prefix.length)]?.meta?.docs?.url
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function messageNodeType(message: Linter.LintMessage): string | undefined {
+  const value = (message as Linter.LintMessage & { nodeType?: unknown }).nodeType
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+function sourceSnippet(
+  source: string | undefined,
+  message: Linter.LintMessage,
+): string | undefined {
+  if (source === undefined || source === '') return undefined
+
+  const lines = source.split(/\r?\n/u)
+  const startIndex = message.line - 1
+  if (startIndex < 0 || startIndex >= lines.length) return undefined
+
+  const reportedEndLine = message.endLine ?? message.line
+  const endIndex = Math.min(
+    lines.length - 1,
+    Math.max(startIndex, reportedEndLine - 1),
+    startIndex + SOURCE_SNIPPET_MAX_LINES - 1,
+  )
+  const linesTruncated = endIndex < reportedEndLine - 1
+  const selected = lines.slice(startIndex, endIndex + 1)
+  selected[0] = selected[0]?.slice(Math.max(0, message.column - 1)) ?? ''
+  if (message.endColumn !== undefined) {
+    const lastIndex = selected.length - 1
+    const endColumn = Math.max(0, message.endColumn - 1)
+    if (lastIndex === 0) {
+      selected[0] = selected[0]?.slice(0, Math.max(0, endColumn - message.column + 1)) ?? ''
+    } else if (endIndex === reportedEndLine - 1) {
+      selected[lastIndex] = selected[lastIndex]?.slice(0, endColumn) ?? ''
+    }
+  }
+
+  const snippet = selected.join('\n') + (linesTruncated ? '\n[snippet truncated]' : '')
+  if (snippet === '') return undefined
+  if (snippet.length <= SOURCE_SNIPPET_MAX_CHARS) return snippet
+  return `${snippet.slice(0, SOURCE_SNIPPET_MAX_CHARS)}\n[snippet truncated]`
+}
 
 function parseRequest(raw: string | undefined): RunnerRequest {
   if (raw === undefined) throw new Error('eslint-security-sast: runner request is missing')
@@ -167,6 +221,9 @@ async function run(request: RunnerRequest): Promise<RunnerResult> {
     const path = workspaceRelativePath(workspaceRoot, lintResult.filePath)
     for (const message of lintResult.messages) {
       if (message.ruleId !== null && message.fatal !== true) {
+        const nodeType = messageNodeType(message)
+        const ruleUrl = ruleDocumentationUrl(message.ruleId)
+        const source = sourceSnippet(lintResult.source, message)
         findings.push({
           ruleId: message.ruleId,
           severity: message.severity === 2 ? 'error' : 'warning',
@@ -176,6 +233,9 @@ async function run(request: RunnerRequest): Promise<RunnerResult> {
           startColumn: message.column,
           endLine: message.endLine ?? message.line,
           endColumn: message.endColumn ?? message.column,
+          ...(nodeType === undefined ? {} : { nodeType }),
+          ...(ruleUrl === undefined ? {} : { ruleUrl }),
+          ...(source === undefined ? {} : { source }),
         })
         continue
       }

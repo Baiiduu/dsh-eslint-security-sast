@@ -14,6 +14,12 @@ export interface EslintSecurityFinding {
   startColumn: number
   endLine: number
   endColumn: number
+  /** ESLint-reported AST node type associated with the rule match. */
+  nodeType?: string
+  /** HTTP(S) documentation URL declared by the matched rule. */
+  ruleUrl?: string
+  /** Bounded source text covering the reported location. */
+  source?: string
 }
 
 /** A source file that ESLint could not analyze completely. */
@@ -23,25 +29,4 @@ export interface EslintSecurityDiagnostic {
   path: string
   line?: number
   column?: number
-}
-
-/** Scanner and rule-package versions used for a completed invocation. */
-export interface EslintSecurityEngine {
-  name: 'eslint-security'
-  eslintVersion: string
-  securityPluginVersion: string
-}
-
-/** Canonical usable result returned by the `eslint_security_scan` tool. */
-export interface EslintSecurityScanResult {
-  status: 'completed' | 'partial'
-  engine: EslintSecurityEngine
-  scannedPaths: string[]
-  scannedFiles: number
-  findings: EslintSecurityFinding[]
-  diagnostics: EslintSecurityDiagnostic[]
-  totalFindings: number
-  returnedFindings: number
-  truncated: boolean
-  durationMs: number
 }
